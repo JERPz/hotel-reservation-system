@@ -55,32 +55,42 @@ func RegisterUser(w http.ResponseWriter, r *http.Request) {
 // LoginUser POST /users/login
 func LoginUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid method", 405)
+		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
 	}
 
 	var input struct {
-		Email    string
-		Password string
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "Invalid input", 400)
+		http.Error(w, "Invalid input", http.StatusBadRequest)
 		return
 	}
 
 	var user models.User
 	if err := config.DB.Preload("Role").Where("email = ?", input.Email).First(&user).Error; err != nil {
-		http.Error(w, "User not found", 404)
+		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
 
-	if !utils.CheckPassword(input.Password, user.PasswordHash) {
-		http.Error(w, "Invalid password", 401)
+	if !utils.CheckPassword(user.PasswordHash, input.Password) {
+		http.Error(w, "Invalid password", http.StatusUnauthorized)
 		return
 	}
 
-	token, _ := utils.GenerateJWT(user.ID, user.Role.Name)
-	json.NewEncoder(w).Encode(map[string]string{"token": token})
+	token, err := utils.GenerateJWT(user.ID, user.Role.Name)
+	if err != nil {
+		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"token": token,
+		"user":  user,
+	})
 }
 
 // GetUsers GET /users (admin)

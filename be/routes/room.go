@@ -11,8 +11,11 @@ import (
 // GetRooms GET /rooms
 func GetRooms(w http.ResponseWriter, r *http.Request) {
 	var rooms []models.Room
-	// Preload RoomType ด้วยถ้ามี
-	config.DB.Preload("RoomType").Find(&rooms)
+
+	if err := config.DB.Preload("Type").Find(&rooms).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(rooms)
