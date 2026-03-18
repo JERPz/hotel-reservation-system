@@ -2,31 +2,44 @@ package routes
 
 import (
 	"encoding/json"
-	"hotel-backend/config"
-	"hotel-backend/models"
 	"net/http"
+
+	"hotel-backend/middleware"
+	"hotel-backend/models"
+
+	"gorm.io/gorm"
 )
 
-// GetRooms GET /rooms
-func GetRooms(w http.ResponseWriter, r *http.Request) {
-	var rooms []models.Room
-	config.DB.Preload("RoomType").Find(&rooms)
-	json.NewEncoder(w).Encode(rooms)
-}
+func RoomRoutes(mux *http.ServeMux, db *gorm.DB) {
 
-// CreateRoom POST /rooms/create
-func CreateRoom(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid method", 405)
-		return
-	}
+	mux.Handle("/api/rooms", middleware.JWTAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-	var input models.Room
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "Invalid input", 400)
-		return
-	}
+		switch r.Method {
 
-	config.DB.Create(&input)
-	json.NewEncoder(w).Encode(input)
+		case "GET":
+			var rooms []models.Room
+			db.Find(&rooms)
+			json.NewEncoder(w).Encode(rooms)
+
+		case "POST":
+			var room models.Room
+
+			err := json.NewDecoder(r.Body).Decode(&room)
+			if err != nil {
+				http.Error(w, "Invalid body", 400)
+				return
+			}
+
+			if err := db.Create(&room).Error; err != nil {
+				http.Error(w, "Create failed", 500)
+				return
+			}
+
+			w.WriteHeader(201)
+			json.NewEncoder(w).Encode(room)
+
+		default:
+			http.Error(w, "Method not allowed", 405)
+		}
+	})))
 }

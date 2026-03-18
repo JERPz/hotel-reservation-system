@@ -1,7 +1,7 @@
 # Hotel Reservation System API Docs
 
 ## Base URL
-- Local development: `http://localhost:8082`
+- Local development: `http://localhost:8080`
 
 ---
 
