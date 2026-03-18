@@ -35,8 +35,24 @@ func CreateBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	checkIn, _ := time.Parse(time.RFC3339, input.CheckIn)
-	checkOut, _ := time.Parse(time.RFC3339, input.CheckOut)
+	var err error
+	checkIn, err := time.Parse(time.RFC3339, input.CheckIn)
+	if err != nil {
+		checkIn, err = time.Parse("2006-01-02", input.CheckIn)
+		if err != nil {
+			http.Error(w, "Invalid check-in date format. Use RFC3339 or YYYY-MM-DD", http.StatusBadRequest)
+			return
+		}
+	}
+
+	checkOut, err := time.Parse(time.RFC3339, input.CheckOut)
+	if err != nil {
+		checkOut, err = time.Parse("2006-01-02", input.CheckOut)
+		if err != nil {
+			http.Error(w, "Invalid check-out date format. Use RFC3339 or YYYY-MM-DD", http.StatusBadRequest)
+			return
+		}
+	}
 
 	booking := models.Booking{
 		UserID:   input.UserID,
