@@ -1,93 +1,49 @@
-# 🏨 Hotel Reservation System
+package config
 
-A fullstack web application for hotel booking.
+import (
+	"hotel-backend/models"
+	"log"
+	"os"
+	"strings"
 
-Built with:
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+)
 
-* Frontend: React + Vite + TailwindCSS
-* Backend: Go (Golang)
+var DB *gorm.DB
 
----
+func ConnectDB() *gorm.DB {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = os.Getenv("DIRECT_URL")
+	}
+	if dsn == "" {
+		log.Fatal("DATABASE_URL or DIRECT_URL must be set")
+	}
 
-# 📦 Project Structure
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("[error] failed to initialize database, got error %v", err)
+	}
 
-```
-hotel-reservation-system/
-├── FE/   # Frontend (React)
-├── BE/   # Backend (Go)
-```
+	DB = db
 
----
+	// Auto migrate
+	if err := db.AutoMigrate(
+		&models.Role{},
+		&models.User{},
+		&models.RoomType{},
+		&models.Room{},
+		&models.BookingStatus{},
+		&models.Booking{},
+	); err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			log.Println("AutoMigrate partial: table already exists, continuing")
+		} else {
+			log.Fatalf("AutoMigrate failed: %v", err)
+		}
+	}
 
-# 🚀 Running the Frontend (FE)
-
-## 1. Navigate to FE directory
-
-```bash
-cd FE
-```
-
-## 2. Install dependencies
-
-```bash
-bun install
-```
-
-## 3. Start development server
-
-```bash
-bun run dev
-```
-
-## 4. Open in browser
-
-```
-http://localhost:5173
-```
-
----
-
-# ⚙️ Running the Backend (BE)
-
-## 1. Navigate to BE directory
-
-```bash
-cd BE
-```
-
-## 2. Run the server
-
-```bash
-go run main.go
-```
-
----
-
-# 💡 Notes
-
-* Frontend runs on `localhost:5173`
-* Backend runs on `localhost:8080` (or configured port)
-* Both FE and BE must be running for full functionality
-
----
-
-# 🛠️ Development Stack
-
-* Bun (frontend package manager)
-* React + Vite
-* TailwindCSS v4
-* Go (backend API)
-
----
-
-# 🎯 Project Purpose
-
-* Practice fullstack development
-* Learn React + Go integration
-* Understand API and database connection
-
----
-
-# ✨ Author
-
-* JERPz
+	log.Println("✅ Connected to Supabase Pooler DB!")
+	return db
+}
