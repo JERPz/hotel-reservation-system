@@ -11,7 +11,7 @@ import (
 // GetBookings GET /bookings
 func GetBookings(w http.ResponseWriter, r *http.Request) {
 	var bookings []models.Booking
-	config.DB.Preload("User").Preload("Room").Preload("Status").Find(&bookings)
+	config.DB.Preload("User").Preload("Room.Type").Preload("Status").Find(&bookings)
 	json.NewEncoder(w).Encode(bookings)
 }
 
@@ -25,6 +25,7 @@ func CreateBooking(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		UserID   uint
 		RoomID   uint
+		RoomIDs  []uint
 		StatusID uint
 		CheckIn  string
 		CheckOut string
@@ -54,16 +55,33 @@ func CreateBooking(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	booking := models.Booking{
-		UserID:   input.UserID,
-		RoomID:   input.RoomID,
-		StatusID: input.StatusID,
-		CheckIn:  checkIn,
-		CheckOut: checkOut,
+	// Default status if not provided (Pending = 1)
+	statusID := input.StatusID
+	if statusID == 0 {
+		statusID = 1
 	}
 
-	config.DB.Create(&booking)
-	json.NewEncoder(w).Encode(booking)
+	var createdBookings []models.Booking
+
+	// Handle multiple rooms or single room
+	roomIDs := input.RoomIDs
+	if len(roomIDs) == 0 && input.RoomID != 0 {
+		roomIDs = []uint{input.RoomID}
+	}
+
+	for _, rid := range roomIDs {
+		booking := models.Booking{
+			UserID:   input.UserID,
+			RoomID:   rid,
+			StatusID: statusID,
+			CheckIn:  checkIn,
+			CheckOut: checkOut,
+		}
+		config.DB.Create(&booking)
+		createdBookings = append(createdBookings, booking)
+	}
+
+	json.NewEncoder(w).Encode(createdBookings)
 }
 
 // UpdateBooking POST /bookings/update

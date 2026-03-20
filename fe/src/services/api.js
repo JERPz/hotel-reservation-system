@@ -54,16 +54,29 @@ export const api = {
       body: { first_name, last_name, email, phone, password, role_id },
     })
   },
-  createBooking({ user_id, room_id, status_id, check_in, check_out }) {
+  createBooking({ user_id, room_id, room_ids, status_id, check_in, check_out }) {
     return request('api/bookings/create', {
       method: 'POST',
       body: {
         UserID: user_id,
         RoomID: room_id,
+        RoomIDs: room_ids,
         StatusID: status_id,
         CheckIn: check_in,
         CheckOut: check_out,
       },
     })
+  },
+  updateBooking({ id, status_id }) {
+    return request('api/bookings/update', {
+      method: 'POST',
+      body: {
+        ID: id,
+        StatusID: status_id,
+      },
+    })
+  },
+  getUsers() {
+    return request('api/users')
   },
 }

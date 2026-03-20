@@ -3,6 +3,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import { useAuth } from '../controllers/useAuth'
 import { api } from '../services/api'
+import { User, Mail, Lock, Phone, UserPlus, ArrowLeft } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 function useQuery() {
   const { search } = useLocation()
@@ -22,12 +24,11 @@ export default function Signup() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
 
   async function onSubmit(e) {
     e.preventDefault()
-    setError('')
     setLoading(true)
+    const toastId = toast.loading('กำลังสร้างบัญชี...')
     try {
       await api.signup({
         first_name: firstName,
@@ -37,87 +38,126 @@ export default function Signup() {
         password,
         role_id: 2,
       })
+      toast.success('สมัครสมาชิกสำเร็จ!', { id: toastId })
       await login({ email, password })
       navigate(decodeURIComponent(redirect), { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      toast.error(err instanceof Error ? err.message : String(err), { id: toastId })
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="max-w-md mx-auto">
-      <div className="rounded-2xl border border-slate-200 bg-white p-6">
-        <h1 className="text-2xl font-semibold">Signup</h1>
-        <p className="text-slate-600 text-sm mt-2">สมัครสมาชิกเพื่อทำการจองห้องพัก</p>
+    <div className="max-w-lg mx-auto py-12">
+      <Link to="/" className="inline-flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors mb-8 group">
+        <ArrowLeft size={18} className="transition-transform group-hover:-translate-x-1" />
+        <span className="text-sm font-medium">กลับหน้าหลัก</span>
+      </Link>
 
-        {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-900 text-sm mt-4">{error}</div> : null}
+      <div className="rounded-[2rem] border border-slate-200 bg-white p-8 md:p-10 shadow-xl shadow-slate-100">
+        <div className="mb-8">
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 mb-4">
+            <UserPlus size={24} />
+          </div>
+          <h1 className="text-3xl font-black text-slate-900">สมัครสมาชิก</h1>
+          <p className="text-slate-500 mt-2">ร่วมเป็นส่วนหนึ่งกับเรา เพื่อรับสิทธิพิเศษมากมาย</p>
+        </div>
 
-        <form onSubmit={onSubmit} className="mt-5 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <label className="block">
-              <div className="text-sm text-slate-600 mb-1">First name</div>
-              <input
-                type="text"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                className="w-full rounded-md border border-slate-200 px-3 py-2 bg-white"
-              />
-            </label>
-            <label className="block">
-              <div className="text-sm text-slate-600 mb-1">Last name</div>
+        <form onSubmit={onSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-slate-700 ml-1">ชื่อ</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-slate-400">
+                  <User size={18} />
+                </div>
+                <input
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="ชื่อจริง"
+                  className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50/50 py-3.5 pl-12 pr-4 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:outline-none transition-all"
+                  required
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-slate-700 ml-1">นามสกุล</label>
               <input
                 type="text"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
-                className="w-full rounded-md border border-slate-200 px-3 py-2 bg-white"
+                placeholder="นามสกุล"
+                className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50/50 py-3.5 px-4 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:outline-none transition-all"
+                required
               />
-            </label>
+            </div>
           </div>
 
-          <label className="block">
-            <div className="text-sm text-slate-600 mb-1">Phone</div>
-            <input
-              type="text"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="w-full rounded-md border border-slate-200 px-3 py-2 bg-white"
-            />
-          </label>
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-slate-700 ml-1">เบอร์โทรศัพท์</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-slate-400">
+                <Phone size={18} />
+              </div>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="08X-XXX-XXXX"
+                className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50/50 py-3.5 pl-12 pr-4 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:outline-none transition-all"
+                required
+              />
+            </div>
+          </div>
 
-          <label className="block">
-            <div className="text-sm text-slate-600 mb-1">Email</div>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-slate-200 px-3 py-2 bg-white"
-              required
-            />
-          </label>
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-slate-700 ml-1">อีเมล</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-slate-400">
+                <Mail size={18} />
+              </div>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="example@mail.com"
+                className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50/50 py-3.5 pl-12 pr-4 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:outline-none transition-all"
+                required
+              />
+            </div>
+          </div>
 
-          <label className="block">
-            <div className="text-sm text-slate-600 mb-1">Password</div>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-md border border-slate-200 px-3 py-2 bg-white"
-              required
-            />
-          </label>
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-slate-700 ml-1">รหัสผ่าน</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-slate-400">
+                <Lock size={18} />
+              </div>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50/50 py-3.5 pl-12 pr-4 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:outline-none transition-all"
+                required
+              />
+            </div>
+          </div>
 
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'กำลังสมัคร...' : 'Signup'}
+          <Button type="submit" className="w-full py-4 rounded-2xl text-base font-bold shadow-lg shadow-sky-100" disabled={loading}>
+            {loading ? 'กำลังสร้างบัญชี...' : 'สมัครสมาชิก'}
           </Button>
         </form>
 
-        <div className="text-sm text-slate-600 mt-4">
-          มีบัญชีแล้ว?{' '}
-          <Link to={`/login?redirect=${encodeURIComponent(redirect)}`} className="text-slate-900 font-medium hover:underline">
-            Login
-          </Link>
+        <div className="mt-8 pt-8 border-t border-slate-100 text-center">
+          <p className="text-sm text-slate-500 font-medium">
+            มีบัญชีอยู่แล้ว?{' '}
+            <Link to={`/login?redirect=${encodeURIComponent(redirect)}`} className="text-sky-600 font-bold hover:text-sky-700 underline underline-offset-4 decoration-2">
+              เข้าสู่ระบบที่นี่
+            </Link>
+          </p>
         </div>
       </div>
     </div>

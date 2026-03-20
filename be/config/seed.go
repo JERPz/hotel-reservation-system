@@ -17,14 +17,12 @@ func SeedDatabase(db *gorm.DB) {
 	roleMap := make(map[string]uint)
 	for _, name := range roleNames {
 		role := models.Role{Name: name}
-		// ใช้ .Where().FirstOrCreate() เพื่อความแม่นยำในการเช็กข้อมูลเดิม
 		if err := db.Where(models.Role{Name: name}).FirstOrCreate(&role).Error; err != nil {
 			log.Printf("❌ Role [%s] error: %v", name, err)
 		}
 		roleMap[name] = role.ID
 	}
 
-	// 2. Users - เรียกใช้ utils.HashPassword
 	adminPw, _ := utils.HashPassword("admin123")
 	userPw, _ := utils.HashPassword("user123")
 
