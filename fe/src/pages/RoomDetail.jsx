@@ -22,6 +22,13 @@ function toYmd(date) {
   return `${y}-${m}-${d}`
 }
 
+function toDmyYY(ymd) {
+  if (!ymd) return ''
+  const [y, m, d] = String(ymd).split('-')
+  if (!y || !m || !d) return String(ymd)
+  return `${d}/${m}/${String(y).slice(-2)}`
+}
+
 function addDays(date, days) {
   const d = new Date(date)
   d.setDate(d.getDate() + days)
@@ -65,15 +72,24 @@ export default function RoomDetail() {
   const [checkOut, setCheckOut] = useState(() => toYmd(addDays(today, 1)))
   const [qty, setQty] = useState(1)
   const [activeImage, setActiveImage] = useState(0)
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date())
 
   const { roomTypes, loading: rtLoading, error: rtError } = useRoomTypes()
-  const roomType = useMemo(() => roomTypes.find((rt) => String(rt?.ID) === String(typeId)) || null, [roomTypes, typeId])
+  const roomType = useMemo(() => roomTypes.find((rt) => String(rt.ID) === String(typeId)) || null, [roomTypes, typeId])
   const images = useMemo(() => getRoomImages(roomType?.Name), [roomType])
 
-  const { availableRooms, next14, loading, error } = useAvailability({ typeId, checkIn, checkOut })
+  const { availableRooms, monthDays, loading, error } = useAvailability({ typeId, checkIn, checkOut, month: calendarMonth })
 
   const nights = nightsBetween(checkIn, checkOut)
   const maxQty = Math.max(availableRooms.length, 1)
+  const monthDaysMap = useMemo(() => new Map(monthDays.map((d) => [d.date, d.availableCount])), [monthDays])
+  const monthStart = useMemo(() => {
+    const d = new Date(calendarMonth)
+    d.setHours(0, 0, 0, 0)
+    return new Date(d.getFullYear(), d.getMonth(), 1)
+  }, [calendarMonth])
+  const daysInMonth = useMemo(() => new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate(), [monthStart])
+  const leadingBlanks = useMemo(() => new Date(monthStart.getFullYear(), monthStart.getMonth(), 1).getDay(), [monthStart])
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -114,7 +130,13 @@ export default function RoomDetail() {
     )
   }
 
-  if (!roomType) return null
+  if (!roomType) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <div className="rounded-2xl border border-slate-200 bg-white px-6 py-5 text-slate-700">ไม่พบประเภทห้อง</div>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-7xl mx-auto space-y-10 pb-20">
@@ -227,7 +249,7 @@ export default function RoomDetail() {
             </div>
 
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-500 uppercase tracking-widest ml-1">Check-In</label>
                   <div className="relative">
@@ -235,10 +257,18 @@ export default function RoomDetail() {
                     <input 
                       type="date" 
                       value={checkIn} 
-                      onChange={(e) => setCheckIn(e.target.value)}
+                      onChange={(e) => {
+                        const nextCheckIn = e.target.value
+                        setCheckIn(nextCheckIn)
+                        const nextOut = addDays(new Date(nextCheckIn), 1)
+                        setCheckOut(toYmd(nextOut))
+                      }}
                       min={toYmd(today)}
-                      className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50/50 py-3 pl-11 pr-4 text-sm font-bold text-slate-900 focus:border-sky-500 focus:bg-white focus:outline-none transition-all cursor-pointer" 
+                      className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50/50 py-3 pl-11 pr-4 text-sm font-bold text-transparent caret-transparent focus:border-sky-500 focus:bg-white focus:outline-none transition-all cursor-pointer" 
                     />
+                    <div className="pointer-events-none absolute inset-y-0 left-11 right-4 flex items-center text-sm font-bold text-slate-900">
+                      {toDmyYY(checkIn)}
+                    </div>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -250,8 +280,11 @@ export default function RoomDetail() {
                       value={checkOut} 
                       onChange={(e) => setCheckOut(e.target.value)}
                       min={toYmd(addDays(new Date(checkIn), 1))}
-                      className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50/50 py-3 pl-11 pr-4 text-sm font-bold text-slate-900 focus:border-sky-500 focus:bg-white focus:outline-none transition-all cursor-pointer" 
+                      className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50/50 py-3 pl-11 pr-4 text-sm font-bold text-transparent caret-transparent focus:border-sky-500 focus:bg-white focus:outline-none transition-all cursor-pointer" 
                     />
+                    <div className="pointer-events-none absolute inset-y-0 left-11 right-4 flex items-center text-sm font-bold text-slate-900">
+                      {toDmyYY(checkOut)}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -313,24 +346,66 @@ export default function RoomDetail() {
 
       {/* Availability Grid */}
       <section className="space-y-6">
-        <h2 className="text-2xl font-black text-slate-900 flex items-center gap-3">
-          <div className="h-8 w-1.5 bg-sky-600 rounded-full" />
-          สถานะว่าง 14 วันถัดไป
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
-          {next14.map((day) => (
-            <div key={day.date} className="rounded-2xl border border-slate-100 bg-white p-4 flex flex-col items-center gap-2 shadow-sm">
-              <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                {new Date(day.date).toLocaleDateString('th-TH', { weekday: 'short' })}
-              </div>
-              <div className="text-sm font-bold text-slate-900">
-                {new Date(day.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}
-              </div>
-              <div className={`mt-1 text-xs font-black px-2 py-0.5 rounded-full ${day.count > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                {day.count > 0 ? `ว่าง ${day.count}` : 'เต็ม'}
-              </div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <h2 className="text-2xl font-black text-slate-900 flex items-center gap-3">
+            <div className="h-8 w-1.5 bg-sky-600 rounded-full" />
+            ปฏิทินห้องว่าง
+          </h2>
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+              className="h-11 w-11 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 flex items-center justify-center"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <div className="text-sm font-black text-slate-700 uppercase tracking-widest">
+              {monthStart.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+              className="h-11 w-11 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 flex items-center justify-center"
+            >
+              <ChevronRight size={20} />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-7 gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          {['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map((d) => (
+            <div key={d} className="text-center">
+              {d}
             </div>
           ))}
+        </div>
+
+        <div className="grid grid-cols-7 gap-3">
+          {Array.from({ length: leadingBlanks }).map((_, i) => (
+            <div key={`blank-${i}`} />
+          ))}
+
+          {Array.from({ length: daysInMonth }).map((_, idx) => {
+            const day = idx + 1
+            const d = new Date(monthStart.getFullYear(), monthStart.getMonth(), day)
+            d.setHours(0, 0, 0, 0)
+            const ymd = toYmd(d)
+            const availableCount = monthDaysMap.get(ymd) ?? 0
+            const isPast = d < today
+            const label = availableCount > 0 ? `ว่าง ${availableCount}` : 'เต็ม'
+            const pill = availableCount > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+            const card = isPast ? 'opacity-50' : ''
+
+            return (
+              <div
+                key={ymd}
+                className={`rounded-2xl border border-slate-100 bg-white p-4 flex flex-col items-center gap-2 shadow-sm ${card}`}
+              >
+                <div className="text-sm font-bold text-slate-900">{day}</div>
+                <div className={`mt-1 text-xs font-black px-2 py-0.5 rounded-full ${pill}`}>{label}</div>
+              </div>
+            )
+          })}
         </div>
       </section>
     </div>
