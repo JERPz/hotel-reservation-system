@@ -22,7 +22,12 @@ import Signup from './pages/Signup'
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      {/*
+        basename comes from Vite's base path, so the same build works both at the
+        domain root during development and under a subpath on GitHub Pages
+        (/hotel-reservation-system/) without hardcoding either.
+      */}
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <Toaster
           position="top-right"
           toastOptions={{

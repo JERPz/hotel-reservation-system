@@ -206,6 +206,45 @@ server prepares existing rows before migrating. See
 does, and for the two cases where it stops and asks you to repair data rather
 than guessing.
 
+### Publishing the frontend to GitHub Pages
+
+```bash
+cd fe
+bun run build:pages
+```
+
+This differs from `bun run build` in two ways that matter, both required because
+Pages serves a project repository from a subpath
+(`https://<user>.github.io/hotel-reservation-system/`):
+
+- `--base=/hotel-reservation-system/` prefixes every asset URL. A root-relative
+  build resolves its assets against the domain root and renders a blank page.
+- `404.html` is written as a copy of `index.html`. Pages has no rewrite rules, so
+  without it a direct visit to a client-side route such as `/room-types/1`
+  returns a 404 instead of reaching the router.
+
+The router picks up the subpath automatically via `basename={import.meta.env.BASE_URL}`,
+so the same source builds for both layouts.
+
+Publish the output to the `gh-pages` branch, keeping the main working tree clean:
+
+```bash
+git worktree add /tmp/ghpages -B gh-pages origin/gh-pages
+cd /tmp/ghpages
+git rm -rq --ignore-unmatch .
+cp -R /path/to/fe/dist/. .
+touch .nojekyll          # serve files verbatim instead of running Jekyll
+git add -A && git commit -m "Deploy frontend build" && git push origin gh-pages
+cd - && git worktree remove /tmp/ghpages --force
+```
+
+The API address is read from `fe/.env.production`, which is committed so a deploy
+cannot accidentally ship a bundle pointing at `localhost`.
+
+**The backend must allow the Pages origin.** If you set `APP_ENV=production` on
+the API, also set `CORS_ORIGIN=https://<user>.github.io`, or the browser will
+block every request from the published site.
+
 The API shuts down gracefully on `SIGINT` and `SIGTERM`, draining in-flight
 requests within `SHUTDOWN_TIMEOUT`.
 
