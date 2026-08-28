@@ -29,7 +29,7 @@ const (
 // Role groups users by permission level.
 type Role struct {
 	Base
-	Name  string `gorm:"uniqueIndex;size:32;not null" json:"name"`
+	Name  string `gorm:"unique;size:32;not null" json:"name"`
 	Users []User `gorm:"foreignKey:RoleID" json:"-"`
 }
 
@@ -38,7 +38,7 @@ type User struct {
 	Base
 	FirstName string `gorm:"size:80;not null" json:"first_name"`
 	LastName  string `gorm:"size:80" json:"last_name"`
-	Email     string `gorm:"uniqueIndex;size:255;not null" json:"email"`
+	Email     string `gorm:"unique;size:255;not null" json:"email"`
 	Phone     string `gorm:"size:32" json:"phone"`
 
 	// PasswordHash is never serialised. The previous model had no json tag
@@ -73,7 +73,7 @@ func (u User) IsAdmin() bool {
 // RoomType is a category of room sharing a nightly price and description.
 type RoomType struct {
 	Base
-	Name        string  `gorm:"uniqueIndex;size:80;not null" json:"name"`
+	Name        string  `gorm:"unique;size:80;not null" json:"name"`
 	Price       float64 `gorm:"not null" json:"price"`
 	Description string  `gorm:"type:text" json:"description"`
 	Capacity    int     `gorm:"not null;default:2" json:"capacity"`
@@ -84,7 +84,7 @@ type RoomType struct {
 // Room is a single bookable unit belonging to a RoomType.
 type Room struct {
 	Base
-	Number uint `gorm:"uniqueIndex;not null" json:"number"`
+	Number uint `gorm:"unique;not null" json:"number"`
 
 	TypeID uint      `gorm:"index;not null" json:"type_id"`
 	Type   *RoomType `gorm:"foreignKey:TypeID" json:"type,omitempty"`
@@ -103,7 +103,7 @@ const (
 // BookingStatus is the lifecycle state of a booking.
 type BookingStatus struct {
 	Base
-	Name     string    `gorm:"uniqueIndex;size:32;not null" json:"name"`
+	Name     string    `gorm:"unique;size:32;not null" json:"name"`
 	Bookings []Booking `gorm:"foreignKey:StatusID" json:"-"`
 }
 

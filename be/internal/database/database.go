@@ -62,9 +62,16 @@ func Connect(opts Options) (*gorm.DB, error) {
 
 // Migrate brings the schema up to date.
 //
-// AutoMigrate is additive: it creates missing tables, columns and indexes but
-// never drops anything, so it is safe to run on every boot.
+// AutoMigrate creates missing tables, columns and indexes and never drops
+// anything, but it cannot add a NOT NULL column to a table that already holds
+// rows: Postgres rejects that outright because the existing rows would violate
+// the constraint. prepareBookingsTable fills those columns in first, so this is
+// safe to run on every boot against both a fresh and an existing database.
 func Migrate(db *gorm.DB) error {
+	if err := prepareExistingSchema(db); err != nil {
+		return fmt.Errorf("prepare existing schema: %w", err)
+	}
+
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}

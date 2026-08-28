@@ -190,9 +190,21 @@ Frontend (`fe/.env`, see `fe/.env.example`):
 
 ## Deploying
 
-Set `APP_ENV=production`, which additionally requires `CORS_ORIGIN` to list your
-frontend origins explicitly (`*` is rejected). Use a distinct `JWT_SECRET` per
-environment, and leave `SEED_DEMO_PASSWORD` unset so no demo logins are created.
+Set `APP_ENV=production`. This is not cosmetic: while `APP_ENV` is left at its
+`development` default, the seeder runs on every boot and creates
+`admin@example.com` with the password `demo1234`. On a public URL that is an
+administrator account with a published password. Production also requires
+`CORS_ORIGIN` to list your frontend origins explicitly (`*` is rejected), and
+switches logging to JSON.
+
+Use a distinct `JWT_SECRET` per environment, and leave `SEED_DEMO_PASSWORD` unset
+so no demo logins are created.
+
+Upgrading a database created by an earlier version requires no manual steps: the
+server prepares existing rows before migrating. See
+[`be/doc.md`](./be/doc.md#upgrading-an-existing-database) for exactly what it
+does, and for the two cases where it stops and asks you to repair data rather
+than guessing.
 
 The API shuts down gracefully on `SIGINT` and `SIGTERM`, draining in-flight
 requests within `SHUTDOWN_TIMEOUT`.

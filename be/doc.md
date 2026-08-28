@@ -423,6 +423,37 @@ Accounts with their live booking counts. Password hashes are never serialised.
 
 ---
 
+## Upgrading an existing database
+
+This version adds three required columns to `bookings` (`reference`, `nights`,
+`total_price`), narrows `check_in`/`check_out` from a timestamp to a date, and
+tightens several previously nullable columns. Postgres will not add a `NOT NULL`
+column to a table that already holds rows, so the server prepares existing data
+before migrating. On the first boot against an older database it will:
+
+- convert `check_in` and `check_out` to `date`
+- assign every existing booking a `reference`, grouping rows that share a guest,
+  a date range and a creation second, which reconstructs reservations that were
+  originally booked together
+- derive `nights` from the stored dates, treating any stay as at least one night
+- derive `total_price` from the room type's current price × nights (the old schema
+  never recorded what a booking cost, so this is an approximation; from now on the
+  total is captured at booking time)
+- replace `NULL` in `users.first_name`, `users.last_name` and
+  `users.password_hash` with an empty string, default a missing `users.role_id` to
+  the standard user role, and a missing `bookings.status_id` to `pending`
+
+Each step is logged and runs at most once. The whole preparation happens in one
+transaction, so a failure leaves the schema untouched.
+
+Two situations stop the migration deliberately rather than guessing:
+
+- a booking with no guest, room or dates, or a room with no type
+- a foreign key pointing at a row that no longer exists
+
+Both cases are reported with the query needed to inspect them. Repair or remove
+those rows and redeploy.
+
 ## Running locally
 
 ```bash
