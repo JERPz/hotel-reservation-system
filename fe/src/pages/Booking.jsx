@@ -1,340 +1,334 @@
-import { useMemo, useState } from 'react'
+import {
+  ArrowLeft,
+  CalendarDays,
+  CheckCircle2,
+  CreditCard,
+  DoorClosed,
+  Info,
+  MapPin,
+  ShieldCheck,
+} from 'lucide-react'
+import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import Button from '../components/Button'
-import { useAuth } from '../controllers/useAuth'
-import { useAvailability } from '../controllers/useAvailability'
-import { useRoomTypes } from '../controllers/useRoomTypes'
-import { api } from '../services/api'
-import { Calendar, Users, CreditCard, ShieldCheck, CheckCircle2, AlertCircle, ArrowLeft, Info, MapPin, Star } from 'lucide-react'
-import singleImage1 from '../assets/pic/single_1.png'
-import singleImage2 from '../assets/pic/single_2.png'
-import singleImage3 from '../assets/pic/single_3.png'
-import doubleImage1 from '../assets/pic/double_1.png'
-import doubleImage2 from '../assets/pic/double_2.png'
-import doubleImage3 from '../assets/pic/double_3.png'
-import suiteImage1 from '../assets/pic/suite_1.png'
-import suiteImage2 from '../assets/pic/suite_2.png'
-import suiteImage3 from '../assets/pic/suite_3.png'
 import toast from 'react-hot-toast'
 
-const roomImageMap = {
-  single: [singleImage1, singleImage2, singleImage3],
-  double: [doubleImage1, doubleImage2, doubleImage3],
-  suite: [suiteImage1, suiteImage2, suiteImage3],
-}
+import { bookingsApi } from '../api'
+import { useAuth } from '../auth/useAuth'
+import { Button } from '../components/Button'
+import { ErrorState, LoadingState } from '../components/states'
+import { useAvailability } from '../hooks/useAvailability'
+import { useRoomType } from '../hooks/useCatalog'
+import { useQueryParams } from '../hooks/useQueryParams'
+import { formatLongDate } from '../lib/date'
+import { formatBaht } from '../lib/money'
+import { imageFor } from '../lib/roomImages'
 
-function getRoomImage(typeName, idx = 0) {
-  if (!typeName) return singleImage1
-  const key = String(typeName).toLowerCase()
-  if (key.includes('double')) return roomImageMap.double[idx % roomImageMap.double.length]
-  if (key.includes('suite')) return roomImageMap.suite[idx % roomImageMap.suite.length]
-  return roomImageMap.single[idx % roomImageMap.single.length]
-}
-
-function useQuery() {
-  const { search } = useLocation()
-  return useMemo(() => new URLSearchParams(search), [search])
-}
-
-function nightsBetween(checkIn, checkOut) {
-  const a = new Date(checkIn)
-  const b = new Date(checkOut)
-  a.setHours(0, 0, 0, 0)
-  b.setHours(0, 0, 0, 0)
-  const diff = b.getTime() - a.getTime()
-  return diff > 0 ? Math.round(diff / (1000 * 60 * 60 * 24)) : 0
-}
-
+/**
+ * Booking confirmation step.
+ *
+ * The stay is described entirely by the query string so the page is linkable and
+ * survives a reload. The server owns the final decision: it re-checks availability
+ * inside a transaction, so a 409 here is authoritative rather than advisory.
+ */
 export default function Booking() {
-  const query = useQuery()
+  const params = useQueryParams()
   const navigate = useNavigate()
   const location = useLocation()
-  const { isAuthed, user } = useAuth()
+  const { isAuthenticated } = useAuth()
 
-  const typeId = query.get('typeId') || ''
-  const checkIn = query.get('checkIn') || ''
-  const checkOut = query.get('checkOut') || ''
-  const qty = Math.max(Number(query.get('qty') || 1), 1)
+  const typeId = params.get('type_id') ?? ''
+  const checkIn = params.get('check_in') ?? ''
+  const checkOut = params.get('check_out') ?? ''
+  const roomCount = Math.max(Number(params.get('room_count') ?? 1) || 1, 1)
 
-  const { roomTypes, loading: rtLoading, error: rtError } = useRoomTypes()
-  const roomType = useMemo(() => roomTypes.find((rt) => String(rt.ID) === String(typeId)) || null, [roomTypes, typeId])
+  const { roomType, loading: roomTypeLoading, error: roomTypeError, reload } = useRoomType(typeId)
+  const availability = useAvailability({ typeId, checkIn, checkOut })
 
-  const { availableRooms, loading: avLoading, error: avError } = useAvailability({ typeId, checkIn, checkOut })
+  const [submitting, setSubmitting] = useState(false)
+  const [confirmation, setConfirmation] = useState(null)
 
-  const nights = nightsBetween(checkIn, checkOut)
-  const unitPrice = roomType ? Number(roomType.Price) : 0
-  const total = unitPrice * qty * nights
+  const nights = availability.nights
+  const unitPrice = availability.pricePerNight || roomType?.price || 0
+  const total = unitPrice * nights * roomCount
 
-  const [paying, setPaying] = useState(false)
-  const [success, setSuccess] = useState(false)
-
-  const pageLoading = rtLoading || avLoading
-  const pageError = rtError || avError
-
-  async function onPay() {
-    if (!isAuthed) {
-      const currentPath = location.pathname + location.search
-      navigate(`/login?redirect=${encodeURIComponent(currentPath)}`)
+  async function handleConfirm() {
+    if (!isAuthenticated) {
+      const target = encodeURIComponent(location.pathname + location.search)
+      navigate(`/login?redirect=${target}`)
       return
     }
 
-    if (availableRooms.length < qty) {
-      toast.error('ขออภัย ห้องพักเต็มในวันที่เลือก')
-      return
-    }
-
-    setPaying(true)
-    const toastId = toast.loading('กำลังประมวลผลการจอง...')
+    setSubmitting(true)
     try {
-      const roomIds = availableRooms.slice(0, qty).map((r) => r.ID)
-      await api.createBooking({
-        user_id: Number(user?.ID),
-        check_in: checkIn,
-        check_out: checkOut,
-        room_ids: roomIds,
-      })
-      toast.success('จองห้องพักสำเร็จ!', { id: toastId })
-      setSuccess(true)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err), { id: toastId })
+      const result = await bookingsApi.create({ typeId, roomCount, checkIn, checkOut })
+      setConfirmation(result)
+      toast.success('จองห้องพักสำเร็จ')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+      // Availability may have changed underneath us, so refresh what we show.
+      availability.reload()
     } finally {
-      setPaying(false)
+      setSubmitting(false)
     }
   }
 
-  if (success) {
-    return (
-      <div className="max-w-2xl mx-auto py-20 text-center space-y-8 animate-in zoom-in-95 duration-500">
-        <div className="inline-flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 mb-4">
-          <CheckCircle2 size={64} />
-        </div>
-        <div className="space-y-4">
-          <h1 className="text-4xl font-black text-slate-900">การจองสำเร็จ!</h1>
-          <p className="text-lg text-slate-500 max-w-md mx-auto">
-            เราได้รับข้อมูลการจองของคุณเรียบร้อยแล้ว คุณสามารถตรวจสอบรายละเอียดการจองได้ที่เมนู "การจองของฉัน"
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center justify-center gap-4 pt-8">
-          <Link to="/my-bookings" className="rounded-2xl bg-slate-900 px-8 py-4 text-base font-bold text-white hover:bg-slate-800 transition-all shadow-xl shadow-slate-200">
-            ดูการจองของฉัน
-          </Link>
-          <Link to="/" className="rounded-2xl border-2 border-slate-200 px-8 py-4 text-base font-bold text-slate-600 hover:bg-slate-50 transition-all">
-            กลับหน้าหลัก
-          </Link>
-        </div>
-      </div>
-    )
+  if (confirmation) {
+    return <Confirmation confirmation={confirmation} />
   }
 
   if (!typeId || !checkIn || !checkOut) {
     return (
-      <div className="max-w-md mx-auto py-20 text-center">
-        <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-amber-600 mb-4">
-          <Info size={32} />
-        </div>
-        <h2 className="text-xl font-bold text-slate-900">ข้อมูลการจองไม่ครบถ้วน</h2>
-        <p className="text-slate-500 mt-2">กรุณาเลือกประเภทห้องและวันที่จองใหม่</p>
-        <Link to="/" className="mt-6 inline-block rounded-xl bg-sky-600 px-6 py-2 text-sm font-bold text-white hover:bg-sky-700">กลับไปเลือกห้อง</Link>
-      </div>
+      <ErrorState
+        title="ข้อมูลการจองไม่ครบถ้วน"
+        message="กรุณาเลือกประเภทห้องและวันที่เข้าพักอีกครั้ง"
+        onRetry={() => navigate('/')}
+      />
     )
   }
 
-  if (pageLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20">
-        <div className="h-12 w-12 border-4 border-sky-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-slate-500 mt-4 font-medium">กำลังเตรียมข้อมูลการจอง...</p>
-      </div>
-    )
+  if (roomTypeLoading || availability.loading) {
+    return <LoadingState label="กำลังเตรียมข้อมูลการจอง..." />
   }
 
-  if (pageError) {
-    return (
-      <div className="max-w-2xl mx-auto py-20 text-center">
-        <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-rose-100 text-rose-600 mb-4">
-          <AlertCircle size={32} />
-        </div>
-        <h2 className="text-xl font-bold text-rose-900">เกิดข้อผิดพลาด</h2>
-        <p className="text-rose-700 mt-2">{pageError}</p>
-        <button onClick={() => window.location.reload()} className="mt-6 rounded-xl bg-slate-900 px-6 py-2 text-sm font-bold text-white hover:bg-slate-800">ลองใหม่อีกครั้ง</button>
-      </div>
-    )
-  }
+  if (roomTypeError) return <ErrorState message={roomTypeError} onRetry={reload} />
+  if (availability.error) return <ErrorState message={availability.error} onRetry={availability.reload} />
+  if (!roomType) return <ErrorState title="ไม่พบห้องพัก" message="ไม่พบประเภทห้องที่คุณเลือก" />
 
-  if (!roomType) return null
+  const notEnoughRooms = availability.availableCount < roomCount
 
   return (
-    <div className="max-w-6xl mx-auto pb-20 space-y-10">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div className="mx-auto max-w-6xl space-y-10 pb-10">
+      <header className="flex flex-col justify-between gap-6 md:flex-row md:items-center">
         <div className="space-y-2">
-          <button onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors group mb-2">
-            <ArrowLeft size={18} className="transition-transform group-hover:-translate-x-1" />
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="group mb-2 inline-flex items-center gap-2 text-slate-500 transition-colors hover:text-slate-900"
+          >
+            <ArrowLeft size={18} className="transition-transform group-hover:-translate-x-1" aria-hidden="true" />
             <span className="text-sm font-bold">ย้อนกลับ</span>
           </button>
-          <h1 className="text-3xl md:text-4xl font-black text-slate-900">ยืนยันการจองห้องพัก</h1>
-          <p className="text-slate-500">กรุณาตรวจสอบข้อมูลการจองของคุณก่อนทำการชำระเงิน</p>
+          <h1 className="text-3xl font-black text-slate-900 md:text-4xl">ยืนยันการจองห้องพัก</h1>
+          <p className="text-slate-500">ตรวจสอบข้อมูลให้ถูกต้องก่อนยืนยันการจอง</p>
         </div>
-        
-        <div className="hidden md:flex items-center gap-4 text-sm font-bold text-slate-400">
-          <div className="flex items-center gap-2 text-sky-600">
-            <div className="h-8 w-8 rounded-full bg-sky-600 text-white flex items-center justify-center">1</div>
+
+        <ol className="hidden items-center gap-4 text-sm font-bold text-slate-400 md:flex">
+          <li className="flex items-center gap-2 text-sky-600">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-600 text-white">1</span>
             ตรวจสอบข้อมูล
-          </div>
-          <div className="h-px w-8 bg-slate-200" />
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full border-2 border-slate-200 flex items-center justify-center">2</div>
-            การจองสำเร็จ
-          </div>
-        </div>
-      </div>
+          </li>
+          <li className="h-px w-8 bg-slate-200" aria-hidden="true" />
+          <li className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-slate-200">2</span>
+            จองสำเร็จ
+          </li>
+        </ol>
+      </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-        {/* Left: Booking Details */}
-        <div className="lg:col-span-2 space-y-8">
-          <section className="rounded-[2.5rem] border border-slate-200 bg-white overflow-hidden shadow-sm">
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-3">
+        <div className="space-y-8 lg:col-span-2">
+          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-col md:flex-row">
-              <div className="md:w-1/3 aspect-[4/3] md:aspect-auto relative overflow-hidden">
-                <img src={getRoomImage(roomType.Name)} alt={roomType.Name} className="h-full w-full object-cover" />
+              <div className="aspect-[4/3] overflow-hidden md:aspect-auto md:w-1/3">
+                <img
+                  src={imageFor(roomType)}
+                  alt={`ห้องพักประเภท ${roomType.name}`}
+                  className="h-full w-full object-cover"
+                />
               </div>
-              <div className="p-8 md:w-2/3 space-y-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h2 className="text-2xl font-black text-slate-900">{roomType.Name}</h2>
-                    <div className="flex items-center gap-3 text-sky-600 text-sm font-bold mt-1">
-                      <MapPin size={14} />
-                      <span>30Rooms Hotel, Bangkok</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 text-amber-500 font-bold">
-                    <Star size={16} className="fill-amber-500" />
-                    4.8
-                  </div>
-                </div>
-                
-                <p className="text-slate-500 text-sm leading-relaxed line-clamp-2">
-                  {roomType.Description}
-                </p>
 
-                <div className="grid grid-cols-2 gap-8 pt-6 border-t border-slate-100">
-                  <div className="space-y-1">
-                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">เช็คอิน</div>
-                    <div className="text-base font-bold text-slate-900">{new Date(checkIn).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
-                    <div className="text-xs text-slate-500">หลัง 14:00 น.</div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">เช็คเอาท์</div>
-                    <div className="text-base font-bold text-slate-900">{new Date(checkOut).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
-                    <div className="text-xs text-slate-500">ก่อน 12:00 น.</div>
-                  </div>
+              <div className="flex-1 space-y-4 p-6 md:p-8">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900">{roomType.name}</h2>
+                  <p className="mt-1 flex items-center gap-2 text-sm font-bold text-sky-600">
+                    <MapPin size={14} aria-hidden="true" />
+                    30Rooms Hotel, กรุงเทพมหานคร
+                  </p>
                 </div>
+
+                <p className="line-clamp-2 text-sm leading-relaxed text-slate-500">{roomType.description}</p>
+
+                <dl className="grid grid-cols-2 gap-8 border-t border-slate-100 pt-6">
+                  <div>
+                    <dt className="text-[10px] font-black uppercase tracking-widest text-slate-400">เช็คอิน</dt>
+                    <dd className="text-base font-bold text-slate-900">{formatLongDate(checkIn)}</dd>
+                    <dd className="text-xs text-slate-500">หลัง 14:00 น.</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] font-black uppercase tracking-widest text-slate-400">เช็คเอาท์</dt>
+                    <dd className="text-base font-bold text-slate-900">{formatLongDate(checkOut)}</dd>
+                    <dd className="text-xs text-slate-500">ก่อน 12:00 น.</dd>
+                  </div>
+                </dl>
               </div>
             </div>
           </section>
 
-          {!isAuthed && (
-            <div className="rounded-3xl border border-sky-100 bg-sky-50/50 p-6 flex items-start gap-4">
-              <div className="h-10 w-10 rounded-2xl bg-sky-600 text-white flex items-center justify-center shrink-0">
-                <Info size={20} />
-              </div>
+          {!isAuthenticated ? (
+            <aside className="flex items-start gap-4 rounded-3xl border border-sky-100 bg-sky-50/60 p-6">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-600 text-white">
+                <Info size={20} aria-hidden="true" />
+              </span>
               <div>
                 <h3 className="text-lg font-bold text-slate-900">กรุณาเข้าสู่ระบบ</h3>
-                <p className="text-slate-600 text-sm mt-1">
-                  คุณต้องเข้าสู่ระบบก่อนทำการจองห้องพัก เพื่อรับคำยืนยันและการจัดการการจองที่ง่ายขึ้น
+                <p className="mt-1 text-sm text-slate-600">
+                  คุณต้องเข้าสู่ระบบก่อนทำการจอง เพื่อให้เราบันทึกการจองไว้ในบัญชีของคุณ
                 </p>
-                <Link 
+                <Link
                   to={`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`}
-                  className="mt-4 inline-block text-sky-600 font-bold text-sm underline underline-offset-4 decoration-2"
+                  className="mt-4 inline-block text-sm font-bold text-sky-600 underline decoration-2 underline-offset-4"
                 >
                   เข้าสู่ระบบตอนนี้
                 </Link>
               </div>
-            </div>
-          )}
+            </aside>
+          ) : null}
 
-          <section className="space-y-6">
-            <h3 className="text-xl font-black text-slate-900 flex items-center gap-3">
-              <div className="h-6 w-1.5 bg-sky-600 rounded-full" />
+          {notEnoughRooms ? (
+            <aside
+              role="alert"
+              className="flex items-start gap-4 rounded-3xl border border-amber-200 bg-amber-50 p-6"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-white">
+                <Info size={20} aria-hidden="true" />
+              </span>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">ห้องว่างไม่เพียงพอ</h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  ขณะนี้เหลือห้องว่าง {availability.availableCount} ห้อง แต่คุณเลือกไว้ {roomCount} ห้อง
+                  กรุณาย้อนกลับเพื่อปรับจำนวนห้องหรือเปลี่ยนวันที่
+                </p>
+              </div>
+            </aside>
+          ) : null}
+
+          <section className="space-y-4">
+            <h3 className="flex items-center gap-3 text-xl font-black text-slate-900">
+              <span className="h-6 w-1.5 rounded-full bg-sky-600" aria-hidden="true" />
               สรุปข้อมูลการจอง
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="rounded-3xl border border-slate-100 bg-white p-6 flex items-center gap-4">
-                <div className="h-12 w-12 rounded-2xl bg-slate-50 text-slate-600 flex items-center justify-center">
-                  <Calendar size={24} />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">ระยะเวลาการเข้าพัก</div>
-                  <div className="text-base font-bold text-slate-900">{nights} คืน</div>
-                </div>
-              </div>
-              <div className="rounded-3xl border border-slate-100 bg-white p-6 flex items-center gap-4">
-                <div className="h-12 w-12 rounded-2xl bg-slate-50 text-slate-600 flex items-center justify-center">
-                  <Users size={24} />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">จำนวนห้อง</div>
-                  <div className="text-base font-bold text-slate-900">{qty} ห้อง</div>
-                </div>
-              </div>
-            </div>
+
+            <dl className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <SummaryTile icon={CalendarDays} label="ระยะเวลาการเข้าพัก" value={`${nights} คืน`} />
+              <SummaryTile icon={DoorClosed} label="จำนวนห้อง" value={`${roomCount} ห้อง`} />
+            </dl>
           </section>
         </div>
 
-        {/* Right: Payment Summary */}
-        <div className="lg:col-span-1">
-          <div className="sticky top-28 rounded-[2.5rem] border border-slate-200 bg-white p-8 shadow-2xl shadow-slate-200/50 space-y-8">
+        <aside className="lg:col-span-1">
+          <div className="sticky top-24 space-y-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-100 md:p-8">
             <h3 className="text-xl font-black text-slate-900">สรุปค่าใช้จ่าย</h3>
-            
-            <div className="space-y-4">
-              <div className="flex justify-between text-slate-600 font-medium">
-                <span>ค่าห้องพัก ({nights} คืน)</span>
-                <span>฿{(unitPrice * nights).toLocaleString()}</span>
+
+            <dl className="space-y-4">
+              <div className="flex justify-between font-medium text-slate-600">
+                <dt>ค่าห้องพัก ({nights} คืน)</dt>
+                <dd>{formatBaht(unitPrice * nights)}</dd>
               </div>
-              <div className="flex justify-between text-slate-600 font-medium">
-                <span>จำนวนห้อง ({qty} ห้อง)</span>
-                <span>x {qty}</span>
+              <div className="flex justify-between font-medium text-slate-600">
+                <dt>จำนวนห้อง</dt>
+                <dd>× {roomCount}</dd>
               </div>
-              <div className="flex justify-between text-slate-600 font-medium pt-4 border-t border-slate-100">
-                <span>ภาษีและค่าบริการ</span>
-                <span className="text-emerald-600 font-bold">ฟรี</span>
+              <div className="flex justify-between border-t border-slate-100 pt-4 font-medium text-slate-600">
+                <dt>ภาษีและค่าบริการ</dt>
+                <dd className="font-bold text-emerald-600">รวมแล้ว</dd>
               </div>
-              <div className="flex justify-between text-2xl font-black text-slate-900 pt-4 border-t-2 border-slate-50">
-                <span>ยอดรวมทั้งหมด</span>
-                <span className="text-sky-600">฿{total.toLocaleString()}</span>
+              <div className="flex justify-between border-t-2 border-slate-100 pt-4 text-2xl font-black text-slate-900">
+                <dt>ยอดรวมทั้งหมด</dt>
+                <dd className="text-sky-600">{formatBaht(total)}</dd>
               </div>
+            </dl>
+
+            <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-700">
+                <CreditCard size={14} aria-hidden="true" /> วิธีการชำระเงิน
+              </p>
+              <p className="text-sm font-bold text-slate-900">ชำระเงิน ณ ที่พัก</p>
             </div>
 
-            <div className="space-y-4">
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-3">
-                <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-widest">
-                  <CreditCard size={14} /> วิธีการชำระเงิน
-                </div>
-                <div className="flex items-center gap-3 text-sm font-bold text-slate-900">
-                  <div className="h-8 w-12 rounded bg-white border border-slate-200 flex items-center justify-center text-xs text-sky-600 italic">VISA</div>
-                  ชำระเงิน ณ ที่พัก
-                </div>
-              </div>
+            <Button
+              size="lg"
+              className="w-full"
+              onClick={handleConfirm}
+              loading={submitting}
+              disabled={notEnoughRooms || nights === 0}
+            >
+              {isAuthenticated ? 'ยืนยันการจอง' : 'เข้าสู่ระบบเพื่อจอง'}
+            </Button>
 
-              <Button 
-                className="w-full py-5 rounded-2xl text-lg font-black shadow-xl shadow-sky-100 flex items-center justify-center gap-3"
-                onClick={onPay}
-                disabled={paying}
-              >
-                {paying ? 'กำลังประมวลผล...' : (isAuthed ? 'ยืนยันการจอง' : 'เข้าสู่ระบบเพื่อจอง')}
-              </Button>
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-3 text-slate-500 text-[10px] font-bold uppercase tracking-widest">
-                <ShieldCheck size={18} className="text-emerald-500 shrink-0" />
-                ข้อมูลของคุณปลอดภัย 100%
-              </div>
-              <div className="flex items-center gap-3 text-slate-500 text-[10px] font-bold uppercase tracking-widest">
-                <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
-                ยกเลิกฟรี 24 ชม. ก่อนเข้าพัก
-              </div>
-            </div>
+            <ul className="space-y-3">
+              <li className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                <ShieldCheck size={18} className="shrink-0 text-emerald-500" aria-hidden="true" />
+                ตรวจสอบห้องว่างจากระบบจริง
+              </li>
+              <li className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                <CheckCircle2 size={18} className="shrink-0 text-emerald-500" aria-hidden="true" />
+                ยกเลิกฟรีก่อนวันเข้าพัก
+              </li>
+            </ul>
           </div>
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+function SummaryTile({ icon: Icon, label, value }) {
+  return (
+    <div className="flex items-center gap-4 rounded-3xl border border-slate-100 bg-white p-5">
+      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-50 text-slate-600">
+        <Icon size={22} aria-hidden="true" />
+      </span>
+      <span>
+        <dt className="text-xs font-bold uppercase tracking-widest text-slate-400">{label}</dt>
+        <dd className="text-base font-bold text-slate-900">{value}</dd>
+      </span>
+    </div>
+  )
+}
+
+/** Success screen, showing the booking reference the guest can quote to staff. */
+function Confirmation({ confirmation }) {
+  return (
+    <div className="mx-auto max-w-2xl space-y-8 py-16 text-center">
+      <span className="inline-flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+        <CheckCircle2 size={60} aria-hidden="true" />
+      </span>
+
+      <div className="space-y-4">
+        <h1 className="text-4xl font-black text-slate-900">การจองสำเร็จ</h1>
+        <p className="mx-auto max-w-md text-lg text-slate-500">
+          เราได้บันทึกการจองของคุณเรียบร้อยแล้ว สถานะจะเปลี่ยนเป็น &ldquo;ยืนยันแล้ว&rdquo; หลังเจ้าหน้าที่ตรวจสอบ
+        </p>
+      </div>
+
+      <dl className="mx-auto max-w-sm space-y-3 rounded-3xl border border-slate-200 bg-white p-6 text-left shadow-sm">
+        <div className="flex justify-between">
+          <dt className="text-sm font-medium text-slate-500">รหัสการจอง</dt>
+          <dd className="font-mono text-lg font-black tracking-widest text-slate-900">{confirmation.reference}</dd>
         </div>
+        <div className="flex justify-between border-t border-slate-100 pt-3">
+          <dt className="text-sm font-medium text-slate-500">จำนวนห้อง</dt>
+          <dd className="font-bold text-slate-900">{confirmation.bookings.length} ห้อง</dd>
+        </div>
+        <div className="flex justify-between border-t border-slate-100 pt-3">
+          <dt className="text-sm font-medium text-slate-500">ยอดรวม</dt>
+          <dd className="font-black text-sky-600">{formatBaht(confirmation.total_price)}</dd>
+        </div>
+      </dl>
+
+      <div className="flex flex-wrap items-center justify-center gap-4">
+        <Link
+          to="/my-bookings"
+          className="rounded-2xl bg-slate-900 px-8 py-4 text-base font-bold text-white shadow-lg shadow-slate-200 transition-all hover:bg-slate-800"
+        >
+          ดูการจองของฉัน
+        </Link>
+        <Link
+          to="/"
+          className="rounded-2xl border-2 border-slate-200 px-8 py-4 text-base font-bold text-slate-600 transition-all hover:bg-slate-50"
+        >
+          กลับหน้าหลัก
+        </Link>
       </div>
     </div>
   )
